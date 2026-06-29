@@ -72,6 +72,32 @@ location:
   # For remote roles outside your country:
   # onsite_availability: "1 week/month in any city"
 
+# ── Visa Sponsorship ─────────────────────────────────────────────────
+#
+# Critical for international job seekers. When needs_sponsorship is true:
+#   - scan.mjs skips companies with sponsors_visa: false in portals.yml
+#   - scan.mjs skips JDs containing citizenship/green-card-only language
+#   - oferta.md shows a "Sponsorship Status" row in the evaluation
+#
+# Set to false (or omit) if you don't need visa sponsorship.
+visa:
+  needs_sponsorship: false
+  # Phrases that indicate a role requires citizenship/green card.
+  # If ANY of these appear in a JD, the job is skipped during scanning.
+  # Customize for your situation (e.g., add country-specific terms).
+  citizenship_phrases:
+    - "U.S. citizenship required"
+    - "U.S. citizenship is required"
+    - "must be a U.S. citizen"
+    - "U.S. permanent resident"
+    - "green card required"
+    - "green card is required"
+    - "must have a green card"
+    - "no visa sponsorship"
+    - "will not sponsor"
+    - "unable to sponsor"
+    - "cannot sponsor"
+
 # Optional follow-up cadence preferences for `node followup-cadence.mjs`.
 # CLI flags still win for one-off runs (for example `--applied-days 10`).
 # followup_cadence:
@@ -138,3 +164,23 @@ cover_letter:
 # half-point scores like 3.5/5 occur in evaluations). Set it to 0 to
 # generate a PDF for every offer.
 # auto_pdf_score_threshold: 4.0
+
+# ── Scoring Weights ──────────────────────────────────────────────────
+#
+# Tunable weights for the evaluation scoring system. Each dimension is
+# scored 1-5, then multiplied by its weight. The weighted sum produces
+# the final score (X.X/5).
+#
+# Default weights sum to 100. Adjust to match YOUR priorities:
+#   - CV match matters most? Raise it to 30-35%
+#   - Comp research is noise? Drop it to 5-10%
+#   - Culture is critical? Raise to 25%
+#
+# Weights are stored in your tracker for reproducibility.
+scoring_weights:
+  cv_match: 25
+  seniority_fit: 20
+  compensation: 15
+  growth_potential: 15
+  culture_signals: 15
+  geo_lifestyle: 10

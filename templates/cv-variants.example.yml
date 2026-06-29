@@ -1,0 +1,38 @@
+# CV Variants Configuration
+# Define multiple CV versions for A/B testing different positioning strategies.
+#
+# Usage:
+#   node generate-pdf.mjs input.html output.pdf --variant=ml-focus
+#
+# Variant files live in the project root alongside cv.md.
+
+variants:
+  - name: "default"
+    description: "General-purpose CV with balanced positioning"
+    file: "cv.md"
+
+  - name: "ml-focus"
+    description: "Emphasize ML/LLM projects and model deployment experience"
+    file: "cv-ml.md"
+
+  - name: "infra-focus"
+    description: "Emphasize systems architecture, scaling, and platform engineering"
+    file: "cv-infra.md"
+
+  - name: "product-focus"
+    description: "Emphasize product thinking, metrics, and stakeholder management"
+    file: "cv-product.md"
+
+  - name: "client-focus"
+    description: "Emphasize client-facing delivery, prototyping, and rapid iteration"
+    file: "cv-client.md"
+
+auto_detect:
+  - keywords: ["ML Engineer", "Machine Learning", "LLM", "AI Engineer"]
+    variant: "ml-focus"
+  - keywords: ["Platform Engineer", "SRE", "Infrastructure"]
+    variant: "infra-focus"
+  - keywords: ["Product Manager", "Technical PM"]
+    variant: "product-focus"
+  - keywords: ["Forward Deployed", "Solutions Architect"]
+    variant: "client-focus"

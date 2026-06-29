@@ -4,6 +4,40 @@
 
 Interactive mode for when the candidate is filling out an application form in Chrome. It reads what is on the screen, loads the previous context of the job, and generates personalized responses for each form question.
 
+## Dry-Run Mode
+
+Before filling any form, support `--dry-run` to preview actions without executing:
+
+1. **Detect** the form and extract all fields
+2. **Preview** what would be filled: list each field + proposed value
+3. **Ask** for confirmation before any actual form interaction
+4. **Show** the complete draft answers for review
+
+Usage: "dry-run this application" or "preview form answers for [URL]"
+
+Benefits:
+- Review answers before committing
+- Catch auto-fill errors early
+- Safe for sensitive fields (salary, visa status)
+
+## Error Recovery
+
+When auto-fill fails partway through a form:
+
+1. **Log** the failure: which field failed, why (selector not found, timeout, etc.)
+2. **Show** progress: "Successfully filled 8/12 fields. Failed on: [field name]"
+3. **Offer** recovery options:
+   - **Manual input**: "I couldn't auto-fill 'desired salary'. What value should I enter?"
+   - **Skip**: "Skip this field and continue with the rest"
+   - **Retry**: "Try again with a different selector"
+4. **Store** filled values in tracker notes for recovery if submission fails
+5. **Screenshot** the form state for debugging (if Playwright available)
+
+Common failure patterns and fixes:
+- **Custom dropdown**: Fall back to interactive selection or manual input
+- **Dynamic form**: Re-snapshot the page after each field interaction
+- **File upload**: Guide user to upload manually, then continue
+
 ## Requirements
 
 - **Best with Playwright in visible mode**: In visible mode, the candidate sees the browser and the agent can interact with the page.

@@ -4,12 +4,15 @@
  * generate-pdf.mjs — HTML → PDF via Playwright
  *
  * Usage:
- *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN]
+ *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--version=VERSION]
  *
  * --report links the generated PDF to its tracker/report number and records
  * the linkage in data/pdf-index.tsv so downstream tools (e.g. the TUI
  * dashboard's `d`/`D` hotkeys) can locate the exact PDF for an application.
  * Without --report a manifest row is still written, just unkeyed.
+ *
+ * --version records which CV variant was used (e.g. "v1", "ml-focus", "stripped_biomedical").
+ * Stored in pdf-index.tsv for reproducibility and A/B testing.
  *
  * Requires: @playwright/test (or playwright) installed.
  * Uses Chromium headless to render the HTML and produce a clean, ATS-parseable PDF.
@@ -188,7 +191,7 @@ function validateCvSectionOrder(html, cvMarkdown) {
  * CVs supersede stale entries). The file is gitignored: it references
  * gitignored output/ artifacts and is meaningless on another machine.
  */
-function updatePDFManifest(reportNum, pdfPath, htmlPath, format) {
+function updatePDFManifest(reportNum, pdfPath, htmlPath, format, cvVersion) {
   const manifestPath = resolve(__dirname, 'data', 'pdf-index.tsv');
   const toRel = (p) => relative(__dirname, p).split(sep).join('/');
   const relPDF = toRel(pdfPath);
@@ -209,12 +212,12 @@ function updatePDFManifest(reportNum, pdfPath, htmlPath, format) {
     });
   }
 
-  lines.push([reportNum || '', relPDF, relHTML, format, date].join('\t'));
+  lines.push([reportNum || '', relPDF, relHTML, format, date, cvVersion || ''].join('\t'));
 
   mkdirSync(dirname(manifestPath), { recursive: true });
   writeFileSync(
     manifestPath,
-    '# report\tpdf\thtml\tformat\tdate — written by generate-pdf.mjs, do not edit\n' +
+    '# report\tpdf\thtml\tformat\tdate\tversion — written by generate-pdf.mjs, do not edit\n' +
       lines.join('\n') + '\n'
   );
   return relPDF;
@@ -224,13 +227,15 @@ async function generatePDF() {
   const args = process.argv.slice(2);
 
   // Parse arguments
-  let inputPath, outputPath, format = 'a4', reportNum = '';
+  let inputPath, outputPath, format = 'a4', reportNum = '', cvVersion = '';
 
   for (const arg of args) {
     if (arg.startsWith('--format=')) {
       format = arg.split('=')[1].toLowerCase();
     } else if (arg.startsWith('--report=')) {
       reportNum = arg.split('=')[1].trim();
+    } else if (arg.startsWith('--version=')) {
+      cvVersion = arg.split('=')[1].trim();
     } else if (!inputPath) {
       inputPath = arg;
     } else if (!outputPath) {
@@ -288,7 +293,7 @@ async function generatePDF() {
     console.log(`🧹 ATS normalization: ${totalReplacements} replacements (${breakdown})`);
   }
 
-  return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath) });
+  return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, cvVersion });
 }
 
 /**
@@ -344,12 +349,14 @@ export async function inlineLocalFonts(html) {
  *
  * @param {string} html - Full HTML document to render.
  * @param {string} outputPath - Absolute path to write the PDF to.
- * @param {{format?: 'a4'|'letter', baseDir?: string}} [opts]
+ * @param {{format?: 'a4'|'letter', baseDir?: string, reportNum?: string, cvVersion?: string}} [opts]
  * @returns {Promise<{outputPath: string, pageCount: number, size: number}>}
  */
 export async function renderHtmlToPdf(html, outputPath, opts = {}) {
   const format = opts.format || 'a4';
   const baseDir = opts.baseDir || process.cwd();
+  const reportNum = opts.reportNum || '';
+  const cvVersion = opts.cvVersion || '';
 
   mkdirSync(dirname(outputPath), { recursive: true });
 
@@ -398,8 +405,9 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
     console.log(`📦 Size: ${(pdfBuffer.length / 1024).toFixed(1)} KB`);
 
     try {
-      updatePDFManifest(reportNum, outputPath, inputPath, format);
+      updatePDFManifest(reportNum, outputPath, inputPath, format, cvVersion);
       console.log(`🔗 Manifest: data/pdf-index.tsv updated${reportNum ? ` (report ${reportNum})` : ' (no --report given)'}`);
+      if (cvVersion) console.log(`🏷️  CV version: ${cvVersion}`);
     } catch (err) {
       // The PDF itself succeeded — never fail the run over manifest bookkeeping.
       console.error(`⚠️  Manifest update failed: ${err.message}`);

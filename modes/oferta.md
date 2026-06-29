@@ -44,6 +44,11 @@ Table with:
 - Seniority
 - Remote (full/hybrid/onsite)
 - Team size (if mentioned)
+- **Sponsorship Status** (if `visa.needs_sponsorship: true` in profile.yml):
+  - Check the company's `sponsors_visa` field in `portals.yml`
+  - Check JD text for citizenship/green card phrases
+  - Display: "✅ Known sponsor" / "❌ No visa sponsorship" / "⚪ Unknown — verify manually"
+  - If JD explicitly says "no visa sponsorship" or "U.S. citizenship required", mark as blocked
 - TL;DR in 1 sentence
 
 ## Block B — Match with CV
@@ -63,6 +68,39 @@ Read `cv.md`. Create a table with each JD requirement mapped to exact lines in t
 2. Can the candidate demonstrate adjacent experience?
 3. Is there a portfolio project that covers this gap?
 4. Concrete mitigation plan (phrase for cover letter, quick project, etc.)
+
+## Scoring Table (after Block B)
+
+After completing the CV match analysis, output a weighted scoring table. Read weights from `config/profile.yml` (`scoring_weights` block). If weights are absent, use defaults: cv_match=25, seniority_fit=20, compensation=15, growth_potential=15, culture_signals=15, geo_lifestyle=10.
+
+**Scoring dimensions (each scored 1-5):**
+- **CV Match (weight: X%)**: How well does the JD align with your experience? Evidence from Block B.
+- **Seniority Fit (weight: X%)**: Is this at, above, or below your level? Can you position appropriately?
+- **Compensation (weight: X%)**: How does the comp range compare to your target? Is data available?
+- **Growth Potential (weight: X%)**: Learning opportunities, team quality, career trajectory signals.
+- **Culture Signals (weight: X%)**: Team size, management style, values alignment, work-life balance signals.
+- **Geo/Lifestyle (weight: X%)**: Remote flexibility, timezone alignment, commute, location preference match.
+
+**Output format (MANDATORY — always show this table):**
+
+```
+| Dimension | Score | Weight | Contribution |
+|-----------|-------|--------|--------------|
+| CV Match | X.X/5 | XX% | X.XX |
+| Seniority Fit | X.X/5 | XX% | X.XX |
+| Compensation | X.X/5 | XX% | X.XX |
+| Growth Potential | X.X/5 | XX% | X.XX |
+| Culture Signals | X.X/5 | XX% | X.XX |
+| Geo/Lifestyle | X.X/5 | XX% | X.XX |
+| **Final** | | | **X.X/5** |
+```
+
+**Rules:**
+- Each sub-score must have a 1-line reasoning snippet below the table ("CV Match: Strong Python fit, weak on Rust")
+- Weights are fixed per profile — do not change them mid-evaluation
+- The final score = sum of all (score * weight/100) contributions, rounded to 1 decimal
+- If a dimension has no data, score 3.0 (neutral) and note "insufficient data"
+- Store the weights used in the report for reproducibility
 
 ## Block C — Level and Strategy
 

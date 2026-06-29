@@ -445,6 +445,10 @@ search_queries:
 #   Optional fields on a tracked_companies entry:
 #     provider: <id>     — force a specific provider, skipping detect().
 #     transport: http    — reserved for future transports. Defaults to http.
+#     sponsors_visa: true/false/unknown  — whether this company sponsors visas.
+#       When profile.yml has visa.needs_sponsorship: true, companies with
+#       sponsors_visa: false are skipped during scanning. Set to true if
+#       confirmed, false if confirmed not, or omit (unknown) to skip filtering.
 #
 # For SSR/static career pages, add parser.command + parser.script. The command
 # can be python3, node, or another local executable. The script must print JSON
@@ -626,6 +630,7 @@ tracked_companies:
   - name: Anthropic
     careers_url: https://job-boards.greenhouse.io/anthropic
     api: https://boards-api.greenhouse.io/v1/boards/anthropic/jobs
+    sponsors_visa: true    # Confirmed H-1B sponsor
     enabled: true
 
   - name: OpenAI

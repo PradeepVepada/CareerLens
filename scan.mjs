@@ -28,6 +28,7 @@
  *   node scan.mjs --verify --headed-fallback  # retry anti-bot-blocked URLs in a headed browser (needs a display)
  *   node scan.mjs --verify --throttle          # jittered ~5-10s gap between checks (stay under rate limits)
  *   node scan.mjs --verify --throttle=8000     # custom base gap in ms (waits base..2*base)
+ *   node scan.mjs --allow-duplicates           # bypass dedup (re-evaluate previously seen URLs)
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
@@ -225,6 +226,62 @@ export function buildContentFilter(contentFilter) {
     if (negative.length > 0 && negative.some(k => lower.includes(k))) return false;
     if (positive.length === 0) return true;
     return positive.some(k => lower.includes(k));
+  };
+}
+
+// ── Visa sponsorship filter ─────────────────────────────────────────
+// Optional. Reads config/profile.yml to determine if the user needs visa
+// sponsorship. When enabled, two filters run:
+//   1. Company-level: skip companies with sponsors_visa: false in portals.yml
+//   2. JD-level: skip job descriptions containing citizenship/green card phrases
+//
+// This filter runs AFTER content filter, BEFORE dedup.
+
+const PROFILE_PATH = 'config/profile.yml';
+
+function loadProfileVisaConfig() {
+  try {
+    if (!existsSync(PROFILE_PATH)) return { needsSponsorship: false, citizenshipPhrases: [] };
+    const raw = parseYaml(readFileSync(PROFILE_PATH, 'utf-8'));
+    const visa = raw?.visa;
+    if (!visa) return { needsSponsorship: false, citizenshipPhrases: [] };
+    const needsSponsorship = Boolean(visa.needs_sponsorship);
+    const phrases = Array.isArray(visa.citizenship_phrases) ? visa.citizenship_phrases : [];
+    return { needsSponsorship, citizenshipPhrases: phrases.map(p => p.toLowerCase()) };
+  } catch {
+    return { needsSponsorship: false, citizenshipPhrases: [] };
+  }
+}
+
+export function buildVisaFilter(profileVisa, companies) {
+  // If user doesn't need sponsorship, pass everything
+  if (!profileVisa.needsSponsorship) return { companyFilter: () => true, jdFilter: () => true };
+
+  // Build a Set of company names that are confirmed non-sponsors
+  const nonSponsors = new Set();
+  if (Array.isArray(companies)) {
+    for (const c of companies) {
+      if (c.sponsors_visa === false && c.name) {
+        nonSponsors.add(c.name.toLowerCase());
+      }
+    }
+  }
+
+  const phrases = profileVisa.citizenshipPhrases;
+
+  return {
+    // Returns true if the company should be scanned (passes visa check)
+    companyFilter: (companyName) => {
+      if (nonSponsors.has((companyName || '').toLowerCase())) return false;
+      return true;
+    },
+    // Returns true if the JD passes the citizenship phrase check
+    jdFilter: (description) => {
+      if (typeof description !== 'string' || description.trim() === '') return true;
+      if (phrases.length === 0) return true;
+      const lower = description.toLowerCase();
+      return !phrases.some(phrase => lower.includes(phrase));
+    },
   };
 }
 
@@ -742,6 +799,8 @@ async function main() {
   // --rediscover-404: when a tracked company's URL 404/410s, search for the
   // moved role and re-verify before marking it expired. Opt-in; rides on --verify.
   const rediscover = args.includes('--rediscover-404');
+  // --allow-duplicates: bypass dedup filtering (re-evaluate previously seen URLs)
+  const allowDuplicates = args.includes('--allow-duplicates');
   const companyFlag = args.indexOf('--company');
   const filterCompany = companyFlag !== -1 ? args[companyFlag + 1]?.toLowerCase() : null;
 
@@ -796,6 +855,11 @@ async function main() {
         continue;
       }
       if (filterCompany && !entry.name.toLowerCase().includes(filterCompany)) continue;
+      // Visa sponsorship filter — skip non-sponsoring companies if user needs sponsorship
+      if (!visaFilter.companyFilter(entry.name)) {
+        totalFilteredVisa++;
+        continue;
+      }
       
       const resolved = resolveProvider(entry, providers);
       if (!resolved) {
@@ -820,6 +884,14 @@ async function main() {
     }
   }
 
+  // 4. Load visa sponsorship config (before resolveEntries so company filter can skip non-sponsors)
+  const profileVisa = loadProfileVisaConfig();
+  const visaFilter = buildVisaFilter(profileVisa, companies);
+  if (profileVisa.needsSponsorship) {
+    const nonSponsorCount = companies.filter(c => c.sponsors_visa === false).length;
+    console.log(`Visa filter: active (needs sponsorship) — ${nonSponsorCount} confirmed non-sponsor(s) will be skipped`);
+  }
+
   resolveEntries(companies);
   resolveEntries(boards, { isBoard: true });
 
@@ -832,20 +904,23 @@ async function main() {
   console.log(`Scanning ${parts.join('; ')} via providers`);
   if (dryRun) console.log('(dry run — no files will be written)\n');
 
-  // 4. Load dedup sets
+  // 5. Load dedup sets
   const historyPolicy = scanHistoryPolicy(config);
-  const seenUrlState = loadSeenUrls(historyPolicy);
+  const seenUrlState = allowDuplicates ? { seen: new Set(), recheckEligible: 0 } : loadSeenUrls(historyPolicy);
   const seenUrls = seenUrlState.seen;
-  const seenCompanyRoles = loadSeenCompanyRoles();
+  const seenCompanyRoles = allowDuplicates ? new Set() : loadSeenCompanyRoles();
 
-  // 5. Fetch from each target
+  // 6. Fetch from each target
   const date = new Date().toISOString().slice(0, 10);
   let totalFound = 0;
   let totalFilteredTitle = 0;
   let totalFilteredLocation = 0;
   let totalFilteredSalary = 0;
   let totalFilteredContent = 0;
+  let totalFilteredVisa = 0;
+  let totalFilteredVisaJd = 0;
   let totalDupes = 0;
+  const duplicateDetails = [];  // For verbose logging
   const newOffers = [];
   const errors = [...resolveErrors];
 
@@ -897,13 +972,20 @@ async function main() {
           totalFilteredContent++;
           continue;
         }
+        // Visa JD filter — skip job descriptions with citizenship/green card phrases
+        if (!visaFilter.jdFilter(job.description)) {
+          totalFilteredVisaJd++;
+          continue;
+        }
         if (seenUrls.has(job.url)) {
           totalDupes++;
+          duplicateDetails.push({ company: job.company, title: job.title, reason: 'duplicate URL' });
           continue;
         }
         const key = `${job.company.toLowerCase()}::${job.title.toLowerCase()}`;
         if (seenCompanyRoles.has(key)) {
           totalDupes++;
+          duplicateDetails.push({ company: job.company, title: job.title, reason: 'duplicate company+role' });
           continue;
         }
         // Mark as seen to avoid intra-scan dupes
@@ -995,6 +1077,8 @@ async function main() {
   console.log(`Filtered by location:  ${totalFilteredLocation} removed`);
   console.log(`Filtered by salary:   ${totalFilteredSalary} removed`);
   console.log(`Filtered by content:  ${totalFilteredContent} removed`);
+  if (totalFilteredVisa > 0) console.log(`Filtered by visa (non-sponsor): ${totalFilteredVisa} companies skipped`);
+  if (totalFilteredVisaJd > 0) console.log(`Filtered by visa (JD content):  ${totalFilteredVisaJd} jobs skipped`);
   console.log(`Duplicates:            ${totalDupes} skipped`);
   if (historyPolicy.recheckAfterDays != null) {
     console.log(`Recheck eligible:      ${seenUrlState.recheckEligible} old scan-history URL(s)`);
@@ -1024,6 +1108,17 @@ async function main() {
     if (Object.keys(flagCounts).length > 0) {
       const parts = Object.entries(flagCounts).map(([k, v]) => `${k}: ${v}`);
       console.log(`Trust flags:           ${parts.join(', ')}`);
+    }
+  }
+
+  // Verbose duplicate logging (up to 10 details shown)
+  if (duplicateDetails.length > 0) {
+    const shown = duplicateDetails.slice(0, 10);
+    for (const d of shown) {
+      console.log(`  ⏭️  ${d.company}: skipped "${d.title}" — ${d.reason}`);
+    }
+    if (duplicateDetails.length > 10) {
+      console.log(`  … ${duplicateDetails.length - 10} more duplicates omitted`);
     }
   }
 

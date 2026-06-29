@@ -1,5 +1,31 @@
 # Mode: deep — Deep Research Prompt
 
+## Company Research Cache
+
+Before running research, check `data/companies-cache.json` for existing research:
+1. If the company exists and `researched_date` is within `ttl_days` (default 30), use cached data
+2. If expired or missing, run fresh research and write to cache
+3. Use `node cache.mjs --list` to see cached companies
+4. Use `node cache.mjs --clear-company=X` to force re-research
+
+Cache format:
+```json
+{
+  "company-slug": {
+    "researched_date": "2026-06-29",
+    "ttl_days": 30,
+    "ai_strategy": "...",
+    "recent_moves": "...",
+    "engineering_culture": "...",
+    "challenges": "...",
+    "competitors": "...",
+    "candidate_angle": "..."
+  }
+}
+```
+
+---
+
 Generate a structured prompt for Perplexity/Claude/ChatGPT with 6 axes:
 
 ```text
